@@ -1,7 +1,9 @@
 import requests
 import os
 import re
+import random
 import yfinance as yf
+import cloudscraper
 from datetime import datetime, timedelta
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -19,13 +21,23 @@ CSE_STOCKS = {
     'HAYL': 'Hayleys'
 }
 
+# Real Browser User-Agents ටිකක් (බොට් කෙනෙක් නෙවෙයි වගේ පෙන්නන්න)
+UAS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.1 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+]
+
 def fetch_hydra_data():
     analyzed_data = []
+    # Cloudscraper එකෙන් තමයි අපි request යවන්නේ
+    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
     
     for sym, name in CSE_STOCKS.items():
         price = 0.0
         change = 0.0
         success = False
+        headers = {'User-Agent': random.choice(UAS)}
         
         # 🐉 HEAD 1: Yahoo Finance Core Engine
         try:
@@ -39,18 +51,18 @@ def fetch_hydra_data():
                     if prev > 0:
                         change = ((price - prev) / prev) * 100
                     success = True
-        except:
-            pass # ෆේල් වුණොත් කෝඩ් එක ක්‍රෑෂ් නොවී ඊළඟ එන්ජිමට යනවා
+        except Exception as e:
+            pass 
 
-        # 🐉 HEAD 2: CodeTabs Proxy (Google Finance)
+        # 🐉 HEAD 2: Google Finance Direct API bypass (Cloudscraper)
         if not success:
             try:
-                url = f"https://api.codetabs.com/v1/proxy?quest=https://www.google.com/finance/quote/{sym}:COL"
-                res = requests.get(url, timeout=10)
+                url = f"https://www.google.com/finance/quote/{sym}:COL"
+                res = scraper.get(url, headers=headers, timeout=10)
                 if res.status_code == 200:
                     p_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([^<]+)', res.text)
                     if p_match:
-                        price = float(p_match.group(1).replace(',', '').replace('Rs.', '').replace('LKR', '').strip())
+                        price = float(p_match.group(1).replace(',', '').replace('Rs.', '').replace('LKR', '').replace('₹', '').strip())
                         
                         c_match = re.search(r'class="JwB6zf"[^>]*>([^<]+)', res.text)
                         if c_match:
@@ -59,14 +71,14 @@ def fetch_hydra_data():
                             if 'aria-label="Down' in res.text or "Down by" in res.text:
                                 change = -abs(change)
                         success = True
-            except:
+            except Exception as e:
                 pass
 
-        # 🐉 HEAD 3: CorsProxy (Google Finance Backup)
+        # 🐉 HEAD 3: CorsProxy Fallback
         if not success:
             try:
-                url = f"https://corsproxy.io/?https://www.google.com/finance/quote/{sym}:COL"
-                res = requests.get(url, timeout=10)
+                url = f"https://api.codetabs.com/v1/proxy?quest=https://www.google.com/finance/quote/{sym}:COL"
+                res = requests.get(url, headers=headers, timeout=15)
                 if res.status_code == 200:
                     p_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([^<]+)', res.text)
                     if p_match:
@@ -89,7 +101,6 @@ def fetch_hydra_data():
                 'sym': sym, 'name': name, 'price': price, 'change': change, 'conf': conf
             })
 
-    # ලංකාවේ වෙලාව
     sl_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
     mkt_status = "🟢 Market Open (Live)" if (sl_time.weekday() < 5 and 9 <= sl_time.hour < 14) else "🔴 Market Closed"
     
@@ -99,15 +110,14 @@ def generate_super_alert():
     data, mkt_status = fetch_hydra_data()
     
     if not data:
-        return f"⚠️ <b>System Alert:</b> සියලුම Proxy සේවා අසාර්ථක විය."
+        return f"⚠️ <b>System Alert:</b> සියලුම Data Engines අසාර්ථක විය. GitHub IPs block වී ඇත."
 
-    # හොඳම 3 තෝරාගැනීම
     top_picks = sorted([d for d in data if d['change'] >= -3.0], key=lambda x: x['conf'], reverse=True)[:3]
 
-    msg = f"🏛️ <b>CSE MACRO-QUANT AI V14.0 (THE HYDRA 🐉)</b> 🇱🇰\n"
+    msg = f"🏛️ <b>CSE MACRO-QUANT AI V15.0 (THE HYDRA 🐉)</b> 🇱🇰\n"
     msg += f"<i>{mkt_status}</i>\n\n"
     
-    msg += "🏆 <b>AI TOP SUGGESTIONS (Multi-Proxy Verified)</b>\n"
+    msg += "🏆 <b>AI TOP SUGGESTIONS (Anti-Bot Verified)</b>\n"
     msg += "<i>විශ්ලේෂණය කළ හොඳම කොටස්:</i>\n\n"
     
     for i, s in enumerate(top_picks, 1):
@@ -122,12 +132,14 @@ def generate_super_alert():
         if len(top_picks) > 1: msg += f"2️⃣ {top_picks[1]['sym']}: 35%\n"
         if len(top_picks) > 2: msg += f"3️⃣ {top_picks[2]['sym']}: 25%\n"
 
-    msg += "\n💡 <b>HYDRA SYSTEM:</b> මෙම දත්ත Cloudflare මඟහැර Proxy එන්ජින් 3ක් හරහා තහවුරු කර ඇත."
+    msg += "\n💡 <b>HYDRA SYSTEM:</b> Cloudscraper තාක්ෂණය හරහා Cloudflare මඟහැර දත්ත ලබාගෙන ඇත."
 
     return msg
 
 def main():
-    if not TELEGRAM_TOKEN or not CHAT_ID: return
+    if not TELEGRAM_TOKEN or not CHAT_ID: 
+        print("Error: Tokens missing!")
+        return
     msg = generate_super_alert()
     
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML", "disable_web_page_preview": True})
