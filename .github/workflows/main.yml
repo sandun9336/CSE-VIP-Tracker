@@ -2,10 +2,15 @@ name: CSE Live VIP Bot
 
 on:
   schedule:
-    # ලංකාවේ වෙලාවෙන් දවල් 12:30 ට (මාකට් එක වැහෙන්න කිට්ටුව) ඇලට් එක එන්න
-    # UTC වෙලාවෙන් උදේ 07:00 (07:00 UTC = 12:30 PM SLST)
-    - cron: '0 7 * * 1-5' # සඳුදා සිට සිකුරාදා (1-5) පමණි!
-  workflow_dispatch: # මේකෙන් උඹට ඕන වෙලාවක අතින් (Run workflow) ඔබන්නත් පුළුවන්
+    # ලංකාවේ වෙලාවෙන් උදේ 10:00 (UTC 04:30)
+    - cron: '30 4 * * 1-5'
+    # ලංකාවේ වෙලාවෙන් උදේ 11:00 (UTC 05:30)
+    - cron: '30 5 * * 1-5'
+    # ලංකාවේ වෙලාවෙන් දවල් 12:00 (UTC 06:30)
+    - cron: '30 6 * * 1-5'
+    # ලංකාවේ වෙලාවෙන් දවල් 1:15 (UTC 07:45 - මාකට් එක වැහුණට පසු)
+    - cron: '45 7 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -27,4 +32,3 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python bot.py
-
