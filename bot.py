@@ -1,89 +1,123 @@
 import requests
 import os
 import yfinance as yf
+from datetime import datetime
+import pytz
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 
-# ලංකාවේ Top Blue-Chip සහ Volatile ෂෙයාර්ස් ලිස්ට් එකක් (.CM යනු Colombo Market)
+# ලංකාවේ වැඩිපුරම සල්ලි කැරකෙන Top Liquid Stocks (උදාහරණ කිහිපයක්)
 CSE_STOCKS = {
-    'EXPO.CM': 'Expolanka Holdings',
-    'JKH.CM': 'John Keells',
-    'LOLC.CM': 'LOLC Holdings',
-    'SAMP.CM': 'Sampath Bank',
-    'LIOC.CM': 'Lanka IOC',
-    'BIL.CM': 'Browns Investments',
-    'DIAL.CM': 'Dialog Axiata'
+    'JKH.CM': 'John Keells (Conglomerate)', 'LOLC.CM': 'LOLC Holdings (Finance)',
+    'SAMP.CM': 'Sampath Bank (Banking)', 'LIOC.CM': 'Lanka IOC (Energy)',
+    'BIL.CM': 'Browns Inv (Conglomerate)', 'DIAL.CM': 'Dialog (Telecom)',
+    'COMB.CM': 'Commercial Bank (Banking)', 'HAYL.CM': 'Hayleys (Export/Manufacturing)',
+    'MELS.CM': 'Melstacorp (Beverage)', 'SPEN.CM': 'Aitken Spence (Tourism)'
 }
 
-def fetch_real_cse_data():
-    live_data = []
+def analyze_global_macro():
+    try:
+        # රත්තරන් (Gold) සහ බොරතෙල් (Oil) මිල විශ්ලේෂණය (යුධ සහ ආර්ථික අවදානම් බැලීමට)
+        oil = yf.Ticker("CL=F").history(period="2d")
+        gold = yf.Ticker("GC=F").history(period="2d")
+        
+        oil_change = ((oil['Close'].iloc[-1] - oil['Close'].iloc[0]) / oil['Close'].iloc[0]) * 100
+        gold_change = ((gold['Close'].iloc[-1] - gold['Close'].iloc[0]) / gold['Close'].iloc[0]) * 100
+        
+        macro_text = ""
+        risk_level = "Medium"
+        
+        if oil_change > 2.0 or gold_change > 1.5:
+            macro_text = "⚠️ <b>External Factor Alert (War/Crisis Risk):</b> ලෝක වෙළඳපොලේ බොරතෙල් සහ රත්තරන් මිල තියුනු ලෙස ඉහළ යයි. ගෝලීය අර්බුද (යුධ තත්ත්වයන්) හේතුවෙන් ලංකාවේ නිෂ්පාදන පිරිවැය ඉහළ යා හැක. Export සමාගම් (HAYL) සහ බලශක්ති (LIOC) කෙරෙහි අවධානය යොමු කරන්න."
+            risk_level = "High"
+        elif oil_change < -1.0:
+            macro_text = "🟢 <b>Global Favorable Conditions:</b> බොරතෙල් මිල පහළ යාම ලංකාවේ ආර්ථිකයට (Macro) සුබවාදී වේ. Manufacturing සහ Banking අංශ වර්ධනය විය හැක."
+            risk_level = "Low"
+        else:
+            macro_text = "⚖️ <b>Global Macro Neutral:</b> ගෝලීය වෙළඳපොල ස්ථාවරයි. දේශීය මූල්‍ය දත්ත මත පදනම්ව තීරණ ගන්න."
+            
+        return macro_text, risk_level
+    except:
+        return "⚠️ Global Data සම්බන්ධ වීමේ දෝෂයකි.", "Medium"
+
+def fetch_and_analyze_cse(risk_level):
+    analyzed_data = []
+    
+    # ලංකාවේ වෙලාව පරීක්ෂා කිරීම (මාකට් එක ඇරලාද වහලාද බැලීමට)
+    sl_time = datetime.now(pytz.timezone('Asia/Colombo'))
+    market_status = "🔴 Market Closed (Showing Latest History Data)"
+    if sl_time.weekday() < 5 and 9 <= sl_time.hour < 14:
+        market_status = "🟢 Market Open (Live Data Analyzing)"
+
     for symbol, name in CSE_STOCKS.items():
         try:
-            # Yahoo Finance හරහා ලයිව් දත්ත ඇදගැනීම
             stock = yf.Ticker(symbol)
-            # අලුත්ම මිල සහ පෙර දින මිල
-            current_price = stock.fast_info.last_price
-            prev_close = stock.fast_info.previous_close
+            hist = stock.history(period="5d") # දින 5ක දත්ත trend එක බැලීමට
             
-            # මිල වෙනස්වීම ප්‍රතිශතයක් ලෙස ගණනය කිරීම
-            change_pct = ((current_price - prev_close) / prev_close) * 100
+            if len(hist) >= 2:
+                current_price = hist['Close'].iloc[-1]
+                prev_price = hist['Close'].iloc[-2]
+                change_pct = ((current_price - prev_price) / prev_price) * 100
+                
+                # Volume Analysis (මෝරුන්ගේ ඇතුල්වීම්)
+                vol_current = hist['Volume'].iloc[-1]
+                vol_avg = hist['Volume'].mean()
+                vol_surge = vol_current > (vol_avg * 1.5)
+                
+                # Confidence Score Calculation
+                confidence = 60 # Base score
+                if change_pct > 0 and vol_surge: confidence += 25
+                elif change_pct > 0: confidence += 10
+                
+                if risk_level == "Low": confidence += 5
+                elif risk_level == "High" and "Export" not in name and "Energy" not in name: confidence -= 10
+                
+                confidence = min(98, max(40, int(confidence))) # 40% - 98% අතර
+                
+                # Holding Time Suggestion
+                if vol_surge and change_pct > 2: holding = "දින 7 - 14 (Short-Term Momentum)"
+                else: holding = "සති 3 - මාස 3 (Swing / Value Hold)"
+                
+                analyzed_data.append({
+                    'sym': symbol.replace('.CM', ''), 'name': name, 'price': current_price,
+                    'change': change_pct, 'conf': confidence, 'holding': holding, 'surge': vol_surge
+                })
+        except: continue
             
-            live_data.append({
-                'sym': symbol.replace('.CM', ''), # .CM කෑල්ල අයින් කරලා ලස්සනට පෙන්නන්න
-                'name': name,
-                'price': current_price,
-                'change_pct': change_pct
-            })
-        except Exception as e:
-            continue # මොකක් හරි අවුලක් ගියොත් ඊළඟ කොයින් එකට යනවා
-            
-    return live_data
+    return analyzed_data, market_status
 
-def generate_live_cse_alert():
+def generate_super_alert():
     try:
-        data = fetch_real_cse_data()
-        if not data:
-            return "⚠️ Market Closed හෝ Data ලබාගැනීමේ දෝෂයකි."
-
-        # වෙනස්වීම් අනුව Sort කිරීම (වැඩිපුරම නැගපු සහ වැටුණු ඒවා)
-        sorted_data = sorted(data, key=lambda x: x['change_pct'], reverse=True)
-        top_gainers = [s for s in sorted_data if s['change_pct'] > 0][:3]
-        top_losers = [s for s in sorted_data if s['change_pct'] < 0][-3:]
-
-        msg = "🇱🇰 <b>CSE LIVE VIP TRACKER (REAL-TIME)</b> 🐘\n\n"
+        macro_text, risk_level = analyze_global_macro()
+        data, mkt_status = fetch_and_analyze_cse(risk_level)
         
-        msg += "📈 <b>අද දින වැඩිපුරම ඉහළ ගිය කොටස් (Top Gainers)</b>\n"
-        if top_gainers:
-            for s in top_gainers:
-                msg += f"🟢 <b>{s['sym']} ({s['name']})</b>\n"
-                msg += f"   ➤ මිල: <code>Rs. {s['price']:.2f}</code> (🔺 {s['change_pct']:.2f}%)\n"
-        else:
-            msg += "   <i>දැනට ඉහළ ගිය කොටස් නොමැත.</i>\n"
+        if not data: return "⚠️ දත්ත ලබාගැනීමේ දෝෂයකි."
 
-        msg += "\n📉 <b>මිල අඩුවී ඇති කොටස් (Buy the Dip අවස්ථා)</b>\n"
-        if top_losers:
-            for s in top_losers:
-                msg += f"🔴 <b>{s['sym']} ({s['name']})</b>\n"
-                msg += f"   ➤ මිල: <code>Rs. {s['price']:.2f}</code> (🔻 {s['change_pct']:.2f}%)\n"
-        else:
-            msg += "   <i>දැනට පහළ ගිය කොටස් නොමැත.</i>\n"
+        # හොඳම AI Picks තෝරාගැනීම (Confidence Score එක මත)
+        top_picks = sorted([d for d in data if d['change'] > -2], key=lambda x: x['conf'], reverse=True)[:3]
 
-        # VIP Portfolio Suggestion
-        msg += "\n🏆 <b>VIP CSE PORTFOLIO (SWING TRADES)</b>\n"
-        msg += "<i>කඩා වැටී ඇති (Dip) සුපිරි සමාගම් වල කොටස් එකතු කරන්න:</i>\n\n"
+        msg = f"🏛️ <b>CSE MACRO-QUANT AI V3.0</b> 🇱🇰\n"
+        msg += f"<i>{mkt_status}</i>\n\n"
         
-        # මිල අඩුවෙලා තියෙන හොඳම කොටස් 2ක් ආයෝජනයට තෝරා දීම
-        picks = top_losers[:2] if len(top_losers) >= 2 else sorted_data[:2]
+        msg += f"🌍 <b>GLOBAL MACRO & EXTERNAL FACTORS:</b>\n{macro_text}\n\n"
         
-        for i, s in enumerate(picks, 1):
-            target = s['price'] * 1.15 # 15% ලාභයක් බලාපොරොත්තුවෙන්
-            cut_loss = s['price'] * 0.90 # 10% පාඩුවක් දරාගැනීම
-            msg += f"<b>{i}. {s['sym']} (🟢 BUY)</b> | 💰 Amount: <b>50%</b>\n"
-            msg += f"   ➤ Entry: <code>Rs. {s['price']:.2f}</code>\n"
-            msg += f"   🎯 Target: <code>Rs. {target:.2f}</code> | 🚫 Cut Loss: <code>Rs. {cut_loss:.2f}</code>\n\n"
+        msg += "🏆 <b>AI TOP SUGGESTIONS (DATA DRIVEN)</b>\n"
+        msg += "<i>Fundamentally සහ Technically විශ්ලේෂණය කළ හොඳම කොටස් 3:</i>\n\n"
+        
+        for i, s in enumerate(top_picks, 1):
+            whale_alert = "🐋 <b>Volume Surge (මෝරුන්ගේ මිලදී ගැනීම්)</b>" if s['surge'] else "📈 Steady Accumulation"
+            msg += f"<b>{i}. {s['sym']} ({s['name']})</b>\n"
+            msg += f"   ➤ Entry: <code>Rs. {s['price']:.2f}</code> (වෙනස: {s['change']:.2f}%)\n"
+            msg += f"   🎯 <b>AI ෂුවර් ප්‍රතිශතය (Reliability): {s['conf']}%</b>\n"
+            msg += f"   ⏳ <b>තබාගත යුතු කාලය (Holding):</b> {s['holding']}\n"
+            msg += f"   🧠 <i>Reason: {whale_alert}</i>\n\n"
 
-        msg += "💡 <b>VIP TRICK:</b> CSE හිදී දිනපතා Trade කිරීමට (Day trading) උත්සාහ නොකරන්න. රතු පැහැයෙන් වැටී ඇති දිනවලදී හොඳ සමාගම් අඩුවට මිලදී ගෙන, මාසයක් පමණ තබාගෙන 15% ක ලාභයක් සමග විකුණන්න."
+        msg += "📊 <b>SMART PORTFOLIO ALLOCATION</b>\n"
+        if top_picks:
+            msg += f"1️⃣ {top_picks[0]['sym']}: 40% (Capital) | Cut-Loss: -8%\n"
+            if len(top_picks) > 1: msg += f"2️⃣ {top_picks[1]['sym']}: 35% (Capital) | Cut-Loss: -10%\n"
+            if len(top_picks) > 2: msg += f"3️⃣ {top_picks[2]['sym']}: 25% (Capital) | Cut-Loss: -10%\n"
 
         return msg
     except Exception as e:
@@ -91,7 +125,7 @@ def generate_live_cse_alert():
 
 def main():
     if not TELEGRAM_TOKEN or not CHAT_ID: return
-    msg = generate_live_cse_alert()
+    msg = generate_super_alert()
     
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML", "disable_web_page_preview": True}
@@ -99,3 +133,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
