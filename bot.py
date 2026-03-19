@@ -1,12 +1,12 @@
 import requests
 import os
-import re
-import urllib.parse
+import yfinance as yf
 from datetime import datetime, timedelta
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 
+# ලංකාවේ Top Blue-Chip සමාගම්
 CSE_STOCKS = {
     'JKH': 'John Keells', 'LOLC': 'LOLC Holdings',
     'SAMP': 'Sampath Bank', 'LIOC': 'Lanka IOC',
@@ -14,46 +14,40 @@ CSE_STOCKS = {
     'COMB': 'Commercial Bank', 'HAYL': 'Hayleys'
 }
 
-def fetch_data_proxy_sniper():
+def fetch_data_time_machine():
     analyzed_data = []
     # ලංකාවේ වෙලාවට හැරවීම (UTC + 5:30)
     sl_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
-    market_status = "🟢 Market Open (Live Data)" if (sl_time.weekday() < 5 and 9 <= sl_time.hour < 14) else "🔴 Market Closed (Latest History Data)"
+    market_status = "🟢 Market Open (Live Data)" if (sl_time.weekday() < 5 and 9 <= sl_time.hour < 14) else "🔴 Market Closed (Latest Traded Data)"
 
     for symbol, name in CSE_STOCKS.items():
         try:
-            # 🎯 Hacker Trick: Proxy හරහා රිංගා යාම (IP Masking)
-            target_url = f"https://www.google.com/finance/quote/{symbol}:COL"
-            proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
+            # ⏳ Hacker Logic: දවස් 2ක් වෙනුවට මාසෙක (1mo) දත්ත අරන් හිස් දින මඟහැරීම
+            stock = yf.Ticker(f"{symbol}.CM")
+            hist = stock.history(period="1mo")
             
-            res = requests.get(proxy_url, timeout=10)
-            data = res.json()
-            html = data.get('contents', '')
-
-            if not html: continue
-
-            # Regex හරහා අලුත්ම මිල ගලවා ගැනීම
-            price_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([^<]+)', html)
-            if not price_match: continue
-            current_price = float(price_match.group(1).replace(',', '').replace('Rs.', '').replace('LKR', '').strip())
-
-            # වෙනස්වූ ප්‍රතිශතය (%) ගලවා ගැනීම
-            change_pct = 0.0
-            change_match = re.search(r'class="JwB6zf"[^>]*>([^<]+)', html)
-            if change_match:
-                change_str = change_match.group(1).replace('%', '').replace('+', '').strip()
-                try: 
-                    change_pct = float(change_str)
-                    # Google Finance හි පහළ යාමක් නම් එය 'Down' ලෙස පෙන්වයි.
-                    if "Down by" in html or 'class="JwB6zf" aria-label="Down' in html:
-                        change_pct = -abs(change_pct)
-                except: pass
+            if hist.empty or len(hist) < 2:
+                continue # දත්ත නැත්නම් ඊළඟ එකට යනවා
+                
+            # NaN (හිස්) දත්ත අයින් කරලා පිරිසිදු මිල ගණන් ටික ගැනීම
+            closes = hist['Close'].dropna().tolist()
+            
+            if len(closes) < 2:
+                continue
+                
+            current_price = float(closes[-1])
+            prev_price = float(closes[-2])
+            
+            if prev_price > 0:
+                change_pct = ((current_price - prev_price) / prev_price) * 100
+            else:
+                change_pct = 0.0
             
             # AI Confidence Score
-            conf = 65
-            if change_pct > 1.0: conf += 25
-            elif change_pct > 0.0: conf += 10
-            elif change_pct < 0.0: conf -= 15
+            conf = 60
+            if change_pct > 1.5: conf += 25
+            elif change_pct > 0.0: conf += 15
+            elif change_pct < 0.0: conf -= 10
             
             analyzed_data.append({
                 'sym': symbol, 'name': name, 'price': current_price,
@@ -66,17 +60,17 @@ def fetch_data_proxy_sniper():
 
 def generate_super_alert():
     try:
-        data, mkt_status = fetch_data_proxy_sniper()
+        data, mkt_status = fetch_data_time_machine()
         
-        if not data: return "⚠️ Critical Error: Proxy සේවා හරහාද දත්ත ලබාගැනීමට නොහැක."
+        if not data: return "⚠️ System Error: අන්තර්ජාල සම්බන්ධතා දෝෂයකි. කරුණාකර නැවත උත්සාහ කරන්න."
 
-        top_picks = sorted([d for d in data if d['change'] >= -2.0], key=lambda x: x['conf'], reverse=True)[:3]
+        top_picks = sorted([d for d in data if d['change'] > -3.0], key=lambda x: x['conf'], reverse=True)[:3]
 
-        msg = f"🏛️ <b>CSE MACRO-QUANT AI V5.0 (PROXY SNIPER) 🎯</b> 🇱🇰\n"
+        msg = f"🏛️ <b>CSE MACRO-QUANT AI V6.0 (TIME MACHINE) ⏳</b> 🇱🇰\n"
         msg += f"<i>{mkt_status}</i>\n\n"
         
-        msg += "🏆 <b>AI TOP SUGGESTIONS (IP-Bypass Verified)</b>\n"
-        msg += "<i>Anti-Ban සිස්ටම් එක හරහා විශ්ලේෂණය කළ හොඳම කොටස්:</i>\n\n"
+        msg += "🏆 <b>AI TOP SUGGESTIONS (DATA VERIFIED)</b>\n"
+        msg += "<i>විශ්ලේෂණය කළ හොඳම කොටස් 3:</i>\n\n"
         
         for i, s in enumerate(top_picks, 1):
             msg += f"<b>{i}. {s['sym']} ({s['name']})</b>\n"
@@ -90,7 +84,7 @@ def generate_super_alert():
             if len(top_picks) > 1: msg += f"2️⃣ {top_picks[1]['sym']}: 35% (Capital)\n"
             if len(top_picks) > 2: msg += f"3️⃣ {top_picks[2]['sym']}: 25% (Capital)\n"
 
-        msg += "\n💻 <b>HACKER TRICK:</b> මේ සිග්නල් එන්නේ Google Finance සර්වර් වලට Proxy එකක් හරහා රිංගලා. ඒ නිසා කවදාවත් Block වෙන්නේ නෑ!"
+        msg += "\n💡 <b>UPDATE:</b> දැන් දිනපතා Trade නොවන කොටස් වල දත්ත පවා මාසයක ඉතිහාසය පරීක්ෂා කර නිවැරදිව ලබා ගනී."
 
         return msg
     except Exception as e:
