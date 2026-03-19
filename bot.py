@@ -1,49 +1,60 @@
-import requests
 import os
+import cloudscraper
 from datetime import datetime, timedelta
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
 
-# Financial Times (London) හි ලංකාවේ කොටස් හඳුන්වන රහස් කේත
-FT_STOCKS = {
-    'JKH:CSE': 'John Keells',
-    'LOLC:CSE': 'LOLC Holdings',
-    'SAMP:CSE': 'Sampath Bank',
-    'LIOC:CSE': 'Lanka IOC',
-    'BIL:CSE': 'Browns Inv',
-    'DIAL:CSE': 'Dialog Axiata',
-    'COMB:CSE': 'Commercial Bank',
-    'HAYL:CSE': 'Hayleys'
+# ලංකාවේ Top Blue-Chip සමාගම් (Official CSE කේත)
+CSE_STOCKS = {
+    'JKH.N0000': 'John Keells',
+    'LOLC.N0000': 'LOLC Holdings',
+    'SAMP.N0000': 'Sampath Bank',
+    'LIOC.N0000': 'Lanka IOC',
+    'BIL.N0000': 'Browns Inv',
+    'DIAL.N0000': 'Dialog Axiata',
+    'COMB.N0000': 'Commercial Bank',
+    'HAYL.N0000': 'Hayleys'
 }
 
-def fetch_london_bridge_data():
+def fetch_cse_official_data():
     analyzed_data = []
-    debug_log = "OK"
     
-    try:
-        # 🇬🇧 හොරෙන් රිංගන පාර: Financial Times API
-        symbols_str = ",".join(FT_STOCKS.keys())
-        url = f"https://markets.ft.com/api/data/display/basic/quote?symbols={symbols_str}"
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        }
-        
-        res = requests.get(url, headers=headers, timeout=15)
-        
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get('data', [])
+    # 🛡️ Firewall කඩන CloudScraper එක සක්‍රිය කිරීම
+    scraper = cloudscraper.create_scraper(browser={
+        'browser': 'chrome',
+        'platform': 'windows',
+        'desktop': True
+    })
+    
+    # CSE Official API එක
+    url = "https://www.cse.lk/api/companyInfoSummery"
+    
+    for symbol, name in CSE_STOCKS.items():
+        try:
+            payload = {"symbol": symbol}
+            headers = {
+                "Referer": "https://www.cse.lk/",
+                "Origin": "https://www.cse.lk",
+                "Accept": "application/json, text/plain, */*"
+            }
             
-            for item in items:
-                sym = item.get('symbol', '')
-                quote = item.get('quote', {})
+            # Cloudflare එක කඩාගෙන දත්ත ඇදීම
+            res = scraper.post(url, data=payload, headers=headers, timeout=15)
+            
+            if res.status_code == 200:
+                data = res.json()
                 
-                price = quote.get('lastPrice', 0.0)
-                change = quote.get('change1DayPercent', 0.0)
+                # මිල සහ පෙර දින මිල ලබා ගැනීම
+                price_str = str(data.get('price', 0)).replace(',', '')
+                prev_close_str = str(data.get('previousClose', 0)).replace(',', '')
                 
-                if price > 0:
+                price = float(price_str)
+                prev_close = float(prev_close_str)
+                
+                if price > 0 and prev_close > 0:
+                    change = ((price - prev_close) / prev_close) * 100
+                    
                     # AI Confidence Score
                     conf = 60
                     if change > 2.0: conf += 25
@@ -51,39 +62,35 @@ def fetch_london_bridge_data():
                     elif change < 0.0: conf -= 10
                     
                     analyzed_data.append({
-                        'sym': sym.replace(':CSE', ''),
-                        'name': FT_STOCKS.get(sym, sym),
+                        'sym': symbol.replace('.N0000', ''),
+                        'name': name,
                         'price': price,
                         'change': change,
                         'conf': min(98, max(40, int(conf)))
                     })
-        else:
-            debug_log = f"FT_Block_{res.status_code}"
+        except Exception as e:
+            continue # මොකක් හරි අවුලක් ගියොත් කෝඩ් එක ක්‍රෑෂ් කරන්නේ නැතුව ඊළඟ එකට යනවා
             
-    except Exception as e:
-        debug_log = f"Crash_{str(e)[:20]}"
-        
-    # ලංකාවේ වෙලාවට හැරවීම (UTC + 5:30)
+    # ලංකාවේ වෙලාව
     sl_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
-    market_status = "🟢 Market Open (Live)" if (sl_time.weekday() < 5 and 9 <= sl_time.hour < 14) else "🔴 Market Closed"
+    mkt_status = "🟢 Market Open (Live CSE Data)" if (sl_time.weekday() < 5 and 9 <= sl_time.hour < 14) else "🔴 Market Closed (Latest CSE Data)"
     
-    return analyzed_data, market_status, debug_log
+    return analyzed_data, mkt_status
 
 def generate_super_alert():
-    data, mkt_status, debug_log = fetch_london_bridge_data()
+    data, mkt_status = fetch_cse_official_data()
     
-    # ⚠️ ඩේටා නැත්නම් Error එක පෙන්නනවා
     if not data:
-        return f"⚠️ <b>System Diagnostic Alert</b> ⚠️\n\nදත්ත ලබාගැනීම අසාර්ථකයි.\n\n🛠️ <b>Error Code:</b> <code>{debug_log}</code>"
+        return f"⚠️ <b>System Diagnostic Alert</b> ⚠️\n\nදත්ත ලබාගැනීම අසාර්ථකයි. Cloudflare Firewall එක මගින් අවහිර කර ඇත."
 
     # හොඳම 3 තෝරාගැනීම
     top_picks = sorted([d for d in data if d['change'] >= -3.0], key=lambda x: x['conf'], reverse=True)[:3]
 
-    msg = f"🏛️ <b>CSE MACRO-QUANT AI V11.0 (LONDON BRIDGE) 🇬🇧</b> 🇱🇰\n"
+    msg = f"🏛️ <b>CSE MACRO-QUANT AI V13.0 (CLOUDSCRAPER) 🛡️</b> 🇱🇰\n"
     msg += f"<i>{mkt_status}</i>\n\n"
     
-    msg += "🏆 <b>AI TOP SUGGESTIONS (FT Verified)</b>\n"
-    msg += "<i>විශ්ලේෂණය කළ හොඳම කොටස් 3:</i>\n\n"
+    msg += "🏆 <b>AI TOP SUGGESTIONS (Official CSE Verified)</b>\n"
+    msg += "<i>විශ්ලේෂණය කළ හොඳම කොටස්:</i>\n\n"
     
     for i, s in enumerate(top_picks, 1):
         msg += f"<b>{i}. {s['sym']} ({s['name']})</b>\n"
@@ -97,7 +104,7 @@ def generate_super_alert():
         if len(top_picks) > 1: msg += f"2️⃣ {top_picks[1]['sym']}: 35%\n"
         if len(top_picks) > 2: msg += f"3️⃣ {top_picks[2]['sym']}: 25%\n"
 
-    msg += "\n💡 <b>UPDATE:</b> දැන් දත්ත ලබාගන්නේ Financial Times (UK) හි අභ්‍යන්තර API ජාලය හරහාය."
+    msg += "\n💡 <b>UPDATE:</b> දැන් දත්ත ලබාගන්නේ ඍජුවම කොළඹ කොටස් වෙළඳපොළ (CSE) නිල දත්ත ගබඩාවෙනි."
 
     return msg
 
