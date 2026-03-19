@@ -1,0 +1,30 @@
+name: CSE Live VIP Bot
+
+on:
+  schedule:
+    # ලංකාවේ වෙලාවෙන් දවල් 12:30 ට (මාකට් එක වැහෙන්න කිට්ටුව) ඇලට් එක එන්න
+    # UTC වෙලාවෙන් උදේ 07:00 (07:00 UTC = 12:30 PM SLST)
+    - cron: '0 7 * * 1-5' # සඳුදා සිට සිකුරාදා (1-5) පමණි!
+  workflow_dispatch: # මේකෙන් උඹට ඕන වෙලාවක අතින් (Run workflow) ඔබන්නත් පුළුවන්
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run CSE Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python bot.py
+
