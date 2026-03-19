@@ -1,3 +1,4 @@
+import requests  # <--- මම අමතක කරපු කෑල්ල මෙන්න දැම්මා! 😅
 import os
 import cloudscraper
 from datetime import datetime, timedelta
@@ -69,7 +70,7 @@ def fetch_cse_official_data():
                         'conf': min(98, max(40, int(conf)))
                     })
         except Exception as e:
-            continue # මොකක් හරි අවුලක් ගියොත් කෝඩ් එක ක්‍රෑෂ් කරන්නේ නැතුව ඊළඟ එකට යනවා
+            continue
             
     # ලංකාවේ වෙලාව
     sl_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
@@ -86,7 +87,7 @@ def generate_super_alert():
     # හොඳම 3 තෝරාගැනීම
     top_picks = sorted([d for d in data if d['change'] >= -3.0], key=lambda x: x['conf'], reverse=True)[:3]
 
-    msg = f"🏛️ <b>CSE MACRO-QUANT AI V13.0 (CLOUDSCRAPER) 🛡️</b> 🇱🇰\n"
+    msg = f"🏛️ <b>CSE MACRO-QUANT AI V13.1 (CLOUDSCRAPER FIXED) 🛡️</b> 🇱🇰\n"
     msg += f"<i>{mkt_status}</i>\n\n"
     
     msg += "🏆 <b>AI TOP SUGGESTIONS (Official CSE Verified)</b>\n"
@@ -103,8 +104,6 @@ def generate_super_alert():
         msg += f"1️⃣ {top_picks[0]['sym']}: 40%\n"
         if len(top_picks) > 1: msg += f"2️⃣ {top_picks[1]['sym']}: 35%\n"
         if len(top_picks) > 2: msg += f"3️⃣ {top_picks[2]['sym']}: 25%\n"
-
-    msg += "\n💡 <b>UPDATE:</b> දැන් දත්ත ලබාගන්නේ ඍජුවම කොළඹ කොටස් වෙළඳපොළ (CSE) නිල දත්ත ගබඩාවෙනි."
 
     return msg
 
